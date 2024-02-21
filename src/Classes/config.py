@@ -10,7 +10,7 @@ spec.loader.exec_module(utils)
 # Simulation parameters
 TIME_DURATION = 600 # (s)
 TIME_STEP = 0.01
-TIME_SCALER = 80 # TIME SCALER OF THE SIMULATION 
+TIME_SCALER = 1#80 # TIME SCALER OF THE SIMULATION 
 c = 1500 #sound wave speed
 OPTIMIZATION_ON = True
 

@@ -33,10 +33,10 @@ plot_path = os.path.abspath('/home/andrea/Desktop/ros_simulation_ws/src/ipp_pkg/
 # Initi Global Variables 
 m_rx = [0,0,0,0]
 
-def sig(x,d):
+def sig(x):
     
     alpha = -0.003
-    gamma = d
+    gamma = 200
     return 1/(1+np.e**(alpha*(gamma-x)))
 
 def run_simulation(pub_rx_meas,auvID):
@@ -58,47 +58,61 @@ def run_simulation(pub_rx_meas,auvID):
     # Init time variables and counters and lists
     t, count1, rcvd_pkt, lost_pkt = 0,0,0,0
     delay = []
+    meas_table = []
+    idx_rmv = []
+    buffLen = 10
+    for i in range(buffLen):
+        delay.append(0)
+        meas_table.append(0)
     c = 1500 #(m/s)
     dt = config.TIME_STEP*config.TIME_SCALER
-    meas_table = []
+    idx = 0
     old_m = [0,0,0,0]
-    epsi = 0.01
-    
+    epsi = 1
+    update_buff = False
     ## SIMULATION LOOP ############################################################################################################
     while not rospy.is_shutdown():
 
         #TODO check if the measurements has alredy been processed.
-        if sum(np.abs(m_rx[0:3]))-sum(np.abs(old_m[0:3]))>epsi:
-            #print(sum(np.abs(m_rx[0:3]))-sum(np.abs(old_m[0:3])))
-            #rospy.loginfo(str(auvID)+'PROCESSING A NEW MEASUREMENT')
+        if m_rx[0] - old_m[0] >epsi:
+
             m_rx.append(auv_xy[0])
             m_rx.append(auv_xy[1])
-            meas_table.append(m_rx)
-            delay.append(0)
             
-        for i in range(len(meas_table)):
-            measure = meas_table[i]
+            # Check where to put the measurement in the buffer
+            idx = meas_table.index(0)
+            meas_table[idx] = m_rx
+                      
+        for i in range(len(meas_table[0:idx])):
+            
+            measure = meas_table[i]         
             delay[i] += dt#TODO: BUG HERE
             d = np.sqrt((measure[5]-measure[3])**2+(measure[4]-measure[2])**2)
-            prob = sig(d,d)
+            prob = sig(d)
             if delay[i] >= d*(1/c)*10:
-                pub_rx_meas.publish(np.array(m_rx,dtype=np.float32))
-                '''if (np.random.random() <= prob):
+                rospy.loginfo(t)
+                pub_rx_meas.publish(np.array(measure,dtype=np.float32))
+                idx_rmv.append(i)
+                update_buff = True
+                if (np.random.random() <= prob):
                     #msg received
-                    rcvd_pkt +=1
-
-                    #for j in range(len(pub_rx_meas)):
-                        
+                    rcvd_pkt += 1
                     pub_rx_meas.publish(np.array(m_rx,dtype=np.float32))
                         
                 else:#msg lost
                     lost_pkt += 1
-                    rospy.logwarn('AUV'+str(auvID)+'Lost a Packet')'''
-                    
-                
-                # REMOVE THE MEASUREMENT FROM THE TABLE 
-                meas_table.pop(i)
-                delay.pop(i)
+                    rospy.logwarn('AUV'+str(auvID)+'Lost a Packet')
+
+        if update_buff == True:
+            # Update the buffer according to the pkt sent
+            for i in range(len(idx_rmv)):
+                meas_table.pop(idx_rmv[i])
+                delay.pop(idx_rmv[i])
+                meas_table.append(0)
+                delay.append(0)
+                update_buff = False
+                idx_rmv = []
+                idx = meas_table.index(0)
         
         old_m = m_rx
         t += dt
