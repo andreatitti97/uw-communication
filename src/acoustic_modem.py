@@ -25,8 +25,8 @@ m_rx = [0,0,0,0]
 
 def sig(x):
     
-    alpha = header.header.config.alpha
-    gamma = header.header.config.gamma
+    alpha = header.config.alpha
+    gamma = header.config.gamma
     return 1/(1+np.e**(alpha*(gamma-x)))
 
 def run_simulation(pub_rx_meas,auvID,auvNum):
@@ -80,7 +80,7 @@ def run_simulation(pub_rx_meas,auvID,auvNum):
             delay[i] += dt
             d = np.sqrt((measure[5]-measure[3])**2+(measure[4]-measure[2])**2)
             prob = sig(d)
-            if delay[i] >= d*(1/c)*10:
+            if delay[i] >= d*(1/c)*10 or d < 10:
                 
                 pub_rx_meas.publish(np.array(measure,dtype=np.float32))
                 idx_rmv.append(i)
