@@ -4,42 +4,32 @@ import os
 import time
 import importlib.util, pathlib
 
-# Import math modules
-from math import pi, atan2
+# Import numpy modules
 import numpy as np
-from scipy import stats
 
 #Import ROS modules
 import rospy
 from rospy_tutorials.msg import Floats
 from rospy.numpy_msg import numpy_msg
 
-# Import Costum classes
-class_path = pathlib.Path(__file__).parent.resolve()
-class_path = class_path/'Classes'
-spec = importlib.util.spec_from_file_location("module.config", class_path/'config.py')
-config = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(config)
-spec = importlib.util.spec_from_file_location("module.sensor", class_path/'sensor.py')
-sensor = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(sensor)
-spec = importlib.util.spec_from_file_location("module.tracker", class_path/'tracker.py')
-tracker = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(tracker)
+# Load the header file as a Python module 
+header_file = pathlib.Path(__file__).parent.resolve()
+header_file = os.path.dirname(header_file)
+header_file = header_file+'/include'+'/uw-communication'
+spec = importlib.util.spec_from_file_location("module.header", header_file+'/acoustic_modem_h.py')
+header = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(header)
 
-# Log path definition
-plot_path = os.path.abspath('/home/andrea/Desktop/ros_simulation_ws/src/ipp_pkg/src/logs/plot')
-
-# Initi Global Variables 
+# Init Global Variables for callbacks
 m_rx = [0,0,0,0]
 
 def sig(x):
     
-    alpha = -0.003
-    gamma = 200
+    alpha = header.header.config.alpha
+    gamma = header.header.config.gamma
     return 1/(1+np.e**(alpha*(gamma-x)))
 
-def run_simulation(pub_rx_meas,auvID):
+def run_simulation(pub_rx_meas,auvID,auvNum):
 
     """Simulate the sensor platform and the moving target
     Input:  target : target initial state
@@ -52,29 +42,30 @@ def run_simulation(pub_rx_meas,auvID):
     """
     global count1, m_rx, auv_xy
 
-    Hz = 1/(config.TIME_STEP) #NB: different from sampling rate for move things, this is ros rate
+    Hz = 1/(header.config.TIME_STEP) #NB: different from sampling rate for move things, this is ros rate
     rate = rospy.Rate(Hz)
 
     # Init time variables and counters and lists
-    t, count1, rcvd_pkt, lost_pkt = 0,0,0,0
-    delay = []
-    meas_table = []
-    idx_rmv = []
-    buffLen = 10
+    t, count1, rcvd_pkt, lost_pkt, idx = 0,0,0,0,0
+    dt = header.config.TIME_STEP*header.config.TIME_SCALER
+    delay, meas_table, idx_rmv = [], [], []
+    c = header.config.c #(m/s)
+    old_m = [0,0,0,0]
+    buffLen = header.config.buffLen
+    update_buff = False
+
     for i in range(buffLen):
         delay.append(0)
         meas_table.append(0)
-    c = 1500 #(m/s)
-    dt = config.TIME_STEP*config.TIME_SCALER
-    idx = 0
-    old_m = [0,0,0,0]
-    epsi = 1
-    update_buff = False
+
+    # Start listener
+    listener(auvID,auvNum)
+    rate.sleep()
     ## SIMULATION LOOP ############################################################################################################
     while not rospy.is_shutdown():
 
         #TODO check if the measurements has alredy been processed.
-        if m_rx[0] - old_m[0] >epsi:
+        if m_rx[0] - old_m[0] > 1:#check if a new meas has been overwritten
 
             m_rx.append(auv_xy[0])
             m_rx.append(auv_xy[1])
@@ -86,14 +77,15 @@ def run_simulation(pub_rx_meas,auvID):
         for i in range(len(meas_table[0:idx])):
             
             measure = meas_table[i]         
-            delay[i] += dt#TODO: BUG HERE
+            delay[i] += dt
             d = np.sqrt((measure[5]-measure[3])**2+(measure[4]-measure[2])**2)
             prob = sig(d)
             if delay[i] >= d*(1/c)*10:
-                rospy.loginfo(t)
+                
                 pub_rx_meas.publish(np.array(measure,dtype=np.float32))
                 idx_rmv.append(i)
                 update_buff = True
+
                 if (np.random.random() <= prob):
                     #msg received
                     rcvd_pkt += 1
@@ -110,10 +102,12 @@ def run_simulation(pub_rx_meas,auvID):
                 delay.pop(idx_rmv[i])
                 meas_table.append(0)
                 delay.append(0)
-                update_buff = False
                 idx_rmv = []
                 idx = meas_table.index(0)
-        
+                update_buff = False
+        if int(t) == (header.config.TIME_DURATION-1):
+            rospy.signal_shutdown('Simulation time limit reached')
+
         old_m = m_rx
         t += dt
         count1 += 1 
@@ -152,18 +146,12 @@ def main():
     
     pub_rx_meas = []
 
-    '''for i in range(auvNum):
-        if i+1 != auvID:
-            tmp = rospy.Publisher('/'+str(i+1)+'/uw_channel', numpy_msg(Floats), queue_size=100)
-            pub_rx_meas.append(tmp)'''
     for i in range(auvNum):
         tmp = rospy.Publisher('/'+str(i+1)+'/rx_meas', numpy_msg(Floats), queue_size=100)
         pub_rx_meas.append(tmp)
     pub_rx_meas = rospy.Publisher('/'+str(auvID)+'/rx_meas', numpy_msg(Floats), queue_size=100)
-    # Start listener and simulation
-    listener(auvID,auvNum)
-    run_simulation(pub_rx_meas,auvID)
-
+    # Start simulation
+    run_simulation(pub_rx_meas,auvID,auvNum)
     rospy.spin()
 
 if __name__ == '__main__':
