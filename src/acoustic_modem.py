@@ -13,8 +13,7 @@ from rospy_tutorials.msg import Floats
 from rospy.numpy_msg import numpy_msg
 
 # Load the header file as a Python module 
-header_file = pathlib.Path(__file__).parent.resolve()
-header_file = os.path.dirname(header_file)
+header_file = os.path.dirname(pathlib.Path(__file__).parent.resolve())
 header_file = header_file+'/include'+'/uw-communication'
 spec = importlib.util.spec_from_file_location("module.header", header_file+'/acoustic_modem_h.py')
 header = importlib.util.module_from_spec(spec)
@@ -29,7 +28,7 @@ def sig(x):
     gamma = header.config.gamma
     return 1/(1+np.e**(alpha*(gamma-x)))
 
-def run_simulation(pub_rx_meas,auvID,auvNum):
+def run_acoustic_modem(pub_rx_meas,auvID,auvNum):
 
     """Simulate the sensor platform and the moving target
     Input:  target : target initial state
@@ -80,16 +79,16 @@ def run_simulation(pub_rx_meas,auvID,auvNum):
             delay[i] += dt
             d = np.sqrt((measure[5]-measure[3])**2+(measure[4]-measure[2])**2)
             prob = sig(d)
-            if delay[i] >= d*(1/c)*10 or d < 10:
-                
-                pub_rx_meas.publish(np.array(measure,dtype=np.float32))
+
+            if delay[i] >= d*(1/c)*2 or d < 10:
+
                 idx_rmv.append(i)
                 update_buff = True
 
-                if (np.random.random() <= prob):
+                if (np.random.random() <= prob) or d < 10:
                     #msg received
                     rcvd_pkt += 1
-                    pub_rx_meas.publish(np.array(m_rx,dtype=np.float32))
+                    pub_rx_meas.publish(np.array(measure,dtype=np.float32))
                         
                 else:#msg lost
                     lost_pkt += 1
@@ -105,6 +104,7 @@ def run_simulation(pub_rx_meas,auvID,auvNum):
                 idx_rmv = []
                 idx = meas_table.index(0)
                 update_buff = False
+
         if int(t) == (header.config.TIME_DURATION-1):
             rospy.signal_shutdown('Simulation time limit reached')
 
@@ -128,7 +128,6 @@ def listener(auvID,auvNum):
 
     rospy.Subscriber('vehicle_state_'+str(auvID), numpy_msg(Floats), callbackAuvState)
     for i in range(auvNum):
-        
         rospy.Subscriber('/'+str(i+1)+'/tx_meas', numpy_msg(Floats), callback2)  
     
 def main():
@@ -136,22 +135,23 @@ def main():
     # ROS INIT   
     namespace = rospy.get_namespace()
     params_path = namespace+'acoustic_modem'
+
     # Get AUV ID and number of vehicles.
     auvID = rospy.get_param(params_path+'/auvID')
     auvNum = rospy.get_param(params_path+'/auvNum')
  
     # Node Init
     rospy.init_node('acoustic_modem'+str(auvID))
-    # Publishers init
-    
-    pub_rx_meas = []
 
+    # Publishers init
+    pub_rx_meas = []
     for i in range(auvNum):
         tmp = rospy.Publisher('/'+str(i+1)+'/rx_meas', numpy_msg(Floats), queue_size=100)
         pub_rx_meas.append(tmp)
     pub_rx_meas = rospy.Publisher('/'+str(auvID)+'/rx_meas', numpy_msg(Floats), queue_size=100)
+
     # Start simulation
-    run_simulation(pub_rx_meas,auvID,auvNum)
+    run_acoustic_modem(pub_rx_meas,auvID,auvNum)
     rospy.spin()
 
 if __name__ == '__main__':
