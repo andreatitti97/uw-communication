@@ -41,12 +41,15 @@ def run_acoustic_modem(pub_rx_meas,auvID,auvNum):
     """
     global count1, m_rx, auv_xy, rcvd_pkt, lost_pkt
 
-    Hz = 1/(header.config.TIME_STEP) #NB: different from sampling rate for move things, this is ros rate
+    # ROS simulation parameters
+    t_scaler = header.config.TIME_SCALER
+
+    Hz = 1/(header.config.TIME_STEP) #NB: different from sampling rate for move things, this is ros rate   
     rate = rospy.Rate(Hz)
 
     # Init time variables and counters and lists
     t, count1, idx = 0,0,0
-    dt = header.config.TIME_STEP*header.config.TIME_SCALER
+    dt = header.config.TIME_STEP*t_scaler
     delay, meas_table, idx_rmv = [], [], []
     c = header.config.c #(m/s)
     old_m = [0,0,0,0]
@@ -59,7 +62,8 @@ def run_acoustic_modem(pub_rx_meas,auvID,auvNum):
 
     # Start listener
     listener(auvID,auvNum)
-    rate.sleep()
+
+    rospy.sleep(1)
     ## SIMULATION LOOP ############################################################################################################
     while not rospy.is_shutdown():
 
