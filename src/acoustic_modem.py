@@ -24,7 +24,7 @@ spec.loader.exec_module(header)
 # Init Global Variables for callbacks
 m_rx = [0,0,0,0]
 rcvd_pkt, lost_pkt = 0, 0
-pi_bar = np.zeros(header.config.H)
+
 
 def sig(x):
     
@@ -40,7 +40,7 @@ def run_acoustic_modem(pub_rx_meas,pub_intent ,auvID,auvNum):
             auvID : ID of the AUV associated with acoustic modem node
             auvNum : number ora AUVs
     """
-    global count1, m_rx, auv_xy, rcvd_pkt, lost_pkt
+    global count1, m_rx, auv_xy, pi_bar, rcvd_pkt, lost_pkt
 
     # ROS simulation parameters
     t_scaler = header.config.TIME_SCALER
@@ -89,16 +89,16 @@ def run_acoustic_modem(pub_rx_meas,pub_intent ,auvID,auvNum):
 
                 idx_rmv.append(i)
                 update_buff = True
-                pub_rx_meas.publish(np.array(measure,dtype=np.float32))
 
-                '''if (np.random.random() <= prob) or d < 10:
+                if (np.random.random() <= prob) or d < 10:
                     #msg received
                     rcvd_pkt += 1
                     pub_rx_meas.publish(np.array(measure,dtype=np.float32))
+                    pub_intent.publish(pi_bar)
                         
                 else:#msg lost
                     lost_pkt += 1
-                    rospy.logwarn('|---- ACOUSTIC MODEM '+str(auvID)+': Lost a Packet')'''
+                    rospy.logwarn('|---- ACOUSTIC MODEM '+str(auvID)+': Lost a Packet')
 
         if update_buff == True:
             # Update the buffer according to the pkt sent
@@ -124,7 +124,7 @@ def shutdown_cllbk():
     global auvID, lost_pkt, rcvd_pkt
     '''PUT DATA SAVING HERE'''
     if lost_pkt != 0 and rcvd_pkt != 0:
-        PDR = lost_pkt*100/(lost_pkt+rcvd_pkt)
+        PDR = rcvd_pkt*100/(lost_pkt+rcvd_pkt)
     
         np.savetxt(log_path+'/'+str(auvID)+'-PDR',[int(PDR)])
     magenta = "\033[0;35m"
@@ -145,6 +145,7 @@ def callbackMeasRx(data):
 def callbackCtrlPolicy(data):
     global pi_bar
     tmp = data.data
+    pi_bar = tmp
 
 
 def listener(auvID,auvNum):
@@ -163,7 +164,7 @@ def main():
     params_path = namespace+'acoustic_modem'
 
     # Get AUV ID and number of vehicles.
-    global auvID
+    global auvID, pi_bar
     auvID = rospy.get_param(params_path+'/auvID')
     auvNum = rospy.get_param(params_path+'/auvNum')
  
@@ -173,7 +174,7 @@ def main():
     # Publishers init
     pub_rx_meas = rospy.Publisher('/'+str(auvID)+'/rx_meas', numpy_msg(Floats), queue_size=100)
     pub_rx_ctrl_policy = rospy.Publisher('/'+str(auvID)+'/rx_ctrl_policy', numpy_msg(Floats), queue_size=100)
-
+    pi_bar = np.zeros((auvNum,1))#initialize data structure for policie of intent
     # Start simulation
     run_acoustic_modem(pub_rx_meas, pub_rx_ctrl_policy, auvID,auvNum)
     rospy.on_shutdown(shutdown_cllbk)
