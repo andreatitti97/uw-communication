@@ -24,6 +24,7 @@ spec.loader.exec_module(header)
 # Init Global Variables for callbacks
 m_rx = [0,0,0,0]
 rcvd_pkt, lost_pkt = 0, 0
+pi_bar = np.zeros(header.config.H)
 
 def sig(x):
     
@@ -31,7 +32,7 @@ def sig(x):
     gamma = header.config.gamma
     return 1/(1+np.e**(alpha*(gamma-x)))
 
-def run_acoustic_modem(pub_rx_meas,auvID,auvNum):
+def run_acoustic_modem(pub_rx_meas,pub_intent ,auvID,auvNum):
 
     """Simulate the sensor platform and the moving target
     Input:  
@@ -88,15 +89,16 @@ def run_acoustic_modem(pub_rx_meas,auvID,auvNum):
 
                 idx_rmv.append(i)
                 update_buff = True
+                pub_rx_meas.publish(np.array(measure,dtype=np.float32))
 
-                if (np.random.random() <= prob) or d < 10:
+                '''if (np.random.random() <= prob) or d < 10:
                     #msg received
                     rcvd_pkt += 1
                     pub_rx_meas.publish(np.array(measure,dtype=np.float32))
                         
                 else:#msg lost
                     lost_pkt += 1
-                    rospy.logwarn('|---- ACOUSTIC MODEM '+str(auvID)+': Lost a Packet')
+                    rospy.logwarn('|---- ACOUSTIC MODEM '+str(auvID)+': Lost a Packet')'''
 
         if update_buff == True:
             # Update the buffer according to the pkt sent
@@ -118,19 +120,13 @@ def run_acoustic_modem(pub_rx_meas,auvID,auvNum):
         count1 += 1 
         rate.sleep()
 
-def callback2(data):
-    global m_rx
-    
-    tmp = data.data
-    m_rx = [tmp[0],tmp[1],tmp[2],tmp[3]]
-
 def shutdown_cllbk():
     global auvID, lost_pkt, rcvd_pkt
     '''PUT DATA SAVING HERE'''
     if lost_pkt != 0 and rcvd_pkt != 0:
         PDR = lost_pkt*100/(lost_pkt+rcvd_pkt)
     
-        np.savetxt(log_path+'/'+str(auvID)+'-PDR',[PDR])
+        np.savetxt(log_path+'/'+str(auvID)+'-PDR',[int(PDR)])
     magenta = "\033[0;35m"
     none = "\033[0m"
     rospy.loginfo('%s|---- ACOUSTIC MODEM '+str(auvID)+': Simulation data saved --> Shutting down ...%s',magenta,none)
@@ -140,12 +136,26 @@ def callbackAuvState(data):
     tmp = data.data
     auv_xy = [tmp[0],tmp[1]]
 
+def callbackMeasRx(data):
+    global m_rx
+    
+    tmp = data.data
+    m_rx = [tmp[0],tmp[1],tmp[2],tmp[3]]
+
+def callbackCtrlPolicy(data):
+    global pi_bar
+    tmp = data.data
+
+
 def listener(auvID,auvNum):
 
     rospy.Subscriber('vehicle_state_'+str(auvID), numpy_msg(Floats), callbackAuvState)
-    for i in range(auvNum):
-        rospy.Subscriber('/'+str(i+1)+'/tx_meas', numpy_msg(Floats), callback2)  
     
+    for i in range(auvNum):
+        rospy.Subscriber('/'+str(i+1)+'/tx_meas', numpy_msg(Floats), callbackMeasRx) 
+        rospy.Subscriber('/'+str(i+1)+'/tx_ctrl_policy',numpy_msg(Floats), callbackCtrlPolicy) 
+    
+
 def main():
 
     # ROS INIT   
@@ -161,14 +171,11 @@ def main():
     rospy.init_node('acoustic_modem'+str(auvID)) #log_level=rospy.DEBUG
 
     # Publishers init
-    pub_rx_meas = []
-    for i in range(auvNum):
-        tmp = rospy.Publisher('/'+str(i+1)+'/rx_meas', numpy_msg(Floats), queue_size=100)
-        pub_rx_meas.append(tmp)
     pub_rx_meas = rospy.Publisher('/'+str(auvID)+'/rx_meas', numpy_msg(Floats), queue_size=100)
+    pub_rx_ctrl_policy = rospy.Publisher('/'+str(auvID)+'/rx_ctrl_policy', numpy_msg(Floats), queue_size=100)
 
     # Start simulation
-    run_acoustic_modem(pub_rx_meas,auvID,auvNum)
+    run_acoustic_modem(pub_rx_meas, pub_rx_ctrl_policy, auvID,auvNum)
     rospy.on_shutdown(shutdown_cllbk)
     rospy.spin()
 
