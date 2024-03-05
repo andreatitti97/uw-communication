@@ -95,6 +95,7 @@ def run_acoustic_modem(pub_rx_meas,pub_intent ,auvID,auvNum):
                     rcvd_pkt += 1
                     pub_rx_meas.publish(np.array(measure,dtype=np.float32))
                     pub_intent.publish(pi_bar)
+                    rospy.logerr('AUV ID %s HAS RECEIVED THE FOLLOWING policy of intent: %s',auvID,pi_bar)
                         
                 else:#msg lost
                     lost_pkt += 1
