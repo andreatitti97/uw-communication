@@ -25,7 +25,6 @@ spec.loader.exec_module(header)
 m_rx = [0,0,0,0]
 rcvd_pkt, lost_pkt = 0, 0
 
-
 def sig(x):
     
     alpha = header.config.alpha
@@ -42,25 +41,25 @@ def run_acoustic_modem(pub_rx_meas,pub_intent ,auvID,auvNum):
     """
     global count1, m_rx, auv_xy, pi_bar, rcvd_pkt, lost_pkt
 
-    # ROS simulation parameters
-    t_scaler = header.config.TIME_SCALER
-
+    # Rospy sim params
     Hz = 1/(header.config.TIME_STEP) #NB: different from sampling rate for move things, this is ros rate   
     rate = rospy.Rate(Hz)
 
-    # Init time variables and counters and lists
+    # Init variables, lists, bool
     t, count1, idx = 0,0,0
-    dt = header.config.TIME_STEP*t_scaler
     delay, meas_table, idx_rmv = [], [], []
-    c = header.config.c #(m/s)
     old_m = [0,0,0,0]
-    buffLen = header.config.buffLen
     update_buff = False
 
+    # Load simulation parameters from config file
+    t_scaler = header.config.TIME_SCALER
+    dt = header.config.TIME_STEP*t_scaler
+    c = header.config.c #(m/s)
+    buffLen = header.config.buffLen
     for i in range(buffLen):
         delay.append(0)
         meas_table.append(0)
-
+    
     # Start listener
     listener(auvID,auvNum)
 
@@ -68,7 +67,7 @@ def run_acoustic_modem(pub_rx_meas,pub_intent ,auvID,auvNum):
     ## SIMULATION LOOP ############################################################################################################
     while not rospy.is_shutdown():
 
-        #TODO check if the measurements has alredy been processed.
+        # Check if the measurements has alredy been processed.
         if m_rx[0] - old_m[0] > 1:#check if a new meas has been overwritten
 
             m_rx.append(auv_xy[0])
@@ -126,8 +125,8 @@ def shutdown_cllbk():
     '''PUT DATA SAVING HERE'''
     if lost_pkt != 0 and rcvd_pkt != 0:
         PDR = rcvd_pkt*100/(lost_pkt+rcvd_pkt)
-    
         np.savetxt(log_path+'/'+str(auvID)+'-PDR',[int(PDR)])
+
     magenta = "\033[0;35m"
     none = "\033[0m"
     rospy.loginfo('%s|---- ACOUSTIC MODEM '+str(auvID)+': Simulation data saved --> Shutting down ...%s',magenta,none)
@@ -139,24 +138,19 @@ def callbackAuvState(data):
 
 def callbackMeasRx(data):
     global m_rx
-    
     tmp = data.data
     m_rx = [tmp[0],tmp[1],tmp[2],tmp[3]]
 
 def callbackCtrlPolicy(data):
     global pi_bar
-    tmp = data.data
-    pi_bar = tmp
-
+    pi_bar = data.data
 
 def listener(auvID,auvNum):
 
     rospy.Subscriber('vehicle_state_'+str(auvID), numpy_msg(Floats), callbackAuvState)
-    
     for i in range(auvNum):
         rospy.Subscriber('/'+str(i+1)+'/tx_meas', numpy_msg(Floats), callbackMeasRx) 
         rospy.Subscriber('/'+str(i+1)+'/tx_ctrl_policy',numpy_msg(Floats), callbackCtrlPolicy) 
-    
 
 def main():
 
