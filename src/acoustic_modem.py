@@ -24,6 +24,7 @@ spec.loader.exec_module(header)
 # Init Global Variables for callbacks
 m_rx = [0,0,0,0]
 rcvd_pkt, lost_pkt = 0, 0
+pi_bar = [[], [], [], []]
 
 def sig(x):
     
@@ -50,6 +51,7 @@ def run_acoustic_modem(pub_rx_meas,pub_intent ,auvID,auvNum):
     delay, meas_table, idx_rmv = [], [], []
     old_m = [0,0,0,0]
     update_buff = False
+    old_pi_bar = pi_bar
 
     # Load simulation parameters from config file
     t_scaler = header.config.TIME_SCALER
@@ -60,9 +62,6 @@ def run_acoustic_modem(pub_rx_meas,pub_intent ,auvID,auvNum):
         delay.append(0)
         meas_table.append(0)
     
-    # Start listener
-    listener(auvID,auvNum)
-
     rospy.sleep(1)
     ## SIMULATION LOOP ############################################################################################################
     while not rospy.is_shutdown():
@@ -88,8 +87,18 @@ def run_acoustic_modem(pub_rx_meas,pub_intent ,auvID,auvNum):
 
                 idx_rmv.append(i)
                 update_buff = True
-
-                if (np.random.random() <= prob) or d < 10:
+                #msg received
+                rcvd_pkt += 1
+                pub_rx_meas.publish(np.array(measure,dtype=np.float32))
+                #for j in range(len(pi_bar)):#TODO check how to be sure to send the ctrlpolicy correspondent to the measure
+                tmp1 = pi_bar[auvID-1]
+                #tmp2 = old_pi_bar[j]
+                #if np.sum(tmp1) != np.sum(tmp2):
+                    #if measure[2] - tmp1[0] < 5: #CHECK IF THE POLICY IS associated with the same AUV ID 
+                pub_intent.publish(np.array(tmp1,dtype=np.float32))
+                #old_pi_bar[j] = pi_bar[j]
+                
+                '''if (np.random.random() <= prob) or d < 10:
                     #msg received
                     rcvd_pkt += 1
                     pub_rx_meas.publish(np.array(measure,dtype=np.float32))
@@ -97,18 +106,19 @@ def run_acoustic_modem(pub_rx_meas,pub_intent ,auvID,auvNum):
                         
                 else:#msg lost
                     lost_pkt += 1
-                    rospy.logwarn('|---- ACOUSTIC MODEM '+str(auvID)+': Lost a Packet')
+                    rospy.logwarn('|---- ACOUSTIC MODEM '+str(auvID)+': Lost a Packet')'''
 
         if update_buff == True:
             # Update the buffer according to the pkt sent
-            for i in range(len(idx_rmv)):
-                meas_table.pop(idx_rmv[i])
-                delay.pop(idx_rmv[i])
-                meas_table.append(0)
-                delay.append(0)
-                idx_rmv = []
-                idx = meas_table.index(0)
-                update_buff = False
+            for i in range(len(idx_rmv)-1):
+                if len(idx_rmv) > 0:
+                    meas_table.pop(idx_rmv[i])
+                    delay.pop(idx_rmv[i])
+                    meas_table.append(0)
+                    delay.append(0)
+                    idx_rmv = []
+                    idx = meas_table.index(0)
+                    update_buff = False
 
         if int(t) == (header.config.TIME_DURATION-1):
             rospy.on_shutdown(shutdown_cllbk)
@@ -140,16 +150,33 @@ def callbackMeasRx(data):
     tmp = data.data
     m_rx = [tmp[0],tmp[1],tmp[2],tmp[3]]
 
-def callbackCtrlPolicy(data):
+def callback1(data):
     global pi_bar
-    pi_bar = data.data
+    tmp = data.data
+    pi_bar[0] = tmp
+
+def callback2(data):
+    global pi_bar
+    tmp = data.data
+    pi_bar[1] = tmp
+
+def callback3(data):
+    global pi_bar
+    tmp = data.data
+    pi_bar[2] = tmp
+
+def callback4(data):
+    global pi_bar
+    tmp = data.data
+    pi_bar[3] = tmp
 
 def listener(auvID,auvNum):
 
     rospy.Subscriber('vehicle_state_'+str(auvID), numpy_msg(Floats), callbackAuvState)
+    callbackCtrlPolicy = [callback1,callback2,callback3,callback4]
     for i in range(auvNum):
         rospy.Subscriber('/'+str(i+1)+'/tx_meas', numpy_msg(Floats), callbackMeasRx) 
-        rospy.Subscriber('/'+str(i+1)+'/tx_ctrl_policy',numpy_msg(Floats), callbackCtrlPolicy) 
+        rospy.Subscriber('/'+str(i+1)+'/tx_ctrl_policy',numpy_msg(Floats), callbackCtrlPolicy[i]) 
 
 def main():
 
@@ -161,15 +188,16 @@ def main():
     global auvID, pi_bar
     auvID = rospy.get_param(params_path+'/auvID')
     auvNum = rospy.get_param(params_path+'/auvNum')
- 
+     
     # Node Init
     rospy.init_node('acoustic_modem'+str(auvID)) #log_level=rospy.DEBUG
 
     # Publishers init
     pub_rx_meas = rospy.Publisher('/'+str(auvID)+'/rx_meas', numpy_msg(Floats), queue_size=100)
     pub_rx_ctrl_policy = rospy.Publisher('/'+str(auvID)+'/rx_ctrl_policy', numpy_msg(Floats), queue_size=100)
-    pi_bar = np.zeros((auvNum,1))#initialize data structure for policie of intent
+    
     # Start simulation
+    listener(auvID,auvNum)
     run_acoustic_modem(pub_rx_meas, pub_rx_ctrl_policy, auvID,auvNum)
     rospy.on_shutdown(shutdown_cllbk)
     rospy.spin()
