@@ -1,12 +1,8 @@
 #!/usr/bin/env python
 #Import basic system modules
-import os
-import time
-import importlib.util, pathlib
-
+import os, importlib.util, pathlib
 # Import numpy modules
 import numpy as np
-
 #Import ROS modules
 import rospy
 from rospy_tutorials.msg import Floats
