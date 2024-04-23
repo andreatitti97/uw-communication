@@ -83,27 +83,22 @@ def run_acoustic_modem(pub_rx_meas,pub_intent ,auvID,auvNum):
 
                 idx_rmv.append(i)
                 update_buff = True
-                #msg received
+                
                 rcvd_pkt += 1
                 pub_rx_meas.publish(np.array(measure,dtype=np.float32))
-                #for j in range(len(pi_bar)):#TODO check how to be sure to send the ctrlpolicy correspondent to the measure
                 tmp1 = pi_bar[auvID-1]
-                #tmp2 = old_pi_bar[j]
-                #if np.sum(tmp1) != np.sum(tmp2):
-                    #if measure[2] - tmp1[0] < 5: #CHECK IF THE POLICY IS associated with the same AUV ID 
                 pub_intent.publish(np.array(tmp1,dtype=np.float32))
-                #old_pi_bar[j] = pi_bar[j]
-                
                 '''if (np.random.random() <= prob) or d < 10:
                     #msg received
                     rcvd_pkt += 1
                     pub_rx_meas.publish(np.array(measure,dtype=np.float32))
-                    pub_intent.publish(pi_bar)
+                    tmp1 = pi_bar[auvID-1]
+                    pub_intent.publish(np.array(tmp1,dtype=np.float32))
                         
                 else:#msg lost
                     lost_pkt += 1
-                    rospy.logwarn('|---- ACOUSTIC MODEM '+str(auvID)+': Lost a Packet')'''
-
+                    rospy.logwarn('|---- ACOUSTIC MODEM '+str(auvID)+': Lost a Packet')
+'''
         if update_buff == True:
             # Update the buffer according to the pkt sent
             for i in range(len(idx_rmv)-1):
