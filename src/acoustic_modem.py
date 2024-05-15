@@ -11,7 +11,7 @@ from rospy.numpy_msg import numpy_msg
 # Load the header file as a Python module 
 pkg_directory = os.path.dirname(os.path.dirname(pathlib.Path(__file__).parent.resolve()))
 header_file = pkg_directory+'/uw-communication'+'/include'+'/uw-communication'
-log_path = pkg_directory+'/uwmsn-sim'+'/logs'
+log_path = pkg_directory+'/logs'
 
 spec = importlib.util.spec_from_file_location("module.header", header_file+'/acoustic_modem_h.py')
 header = importlib.util.module_from_spec(spec)
@@ -47,8 +47,7 @@ def run_acoustic_modem(pub_rx_meas,pub_intent ,auvID,auvNum):
     delay, meas_table, idx_rmv = [], [], []
     old_m = [0,0,0,0]
     update_buff = False
-    old_pi_bar = pi_bar
-
+    
     # Load simulation parameters from config file
     t_scaler = header.config.TIME_SCALER
     dt = header.config.TIME_STEP*t_scaler
@@ -185,7 +184,7 @@ def main():
 
     # Publishers init
     pub_rx_meas = rospy.Publisher('/'+str(auvID)+'/rx_meas', numpy_msg(Floats), queue_size=100)
-    pub_rx_ctrl_policy = rospy.Publisher('/'+str(auvID)+'/rx_ctrl_policy', numpy_msg(Floats), queue_size=100)
+    pub_rx_ctrl_policy = rospy.Publisher('/'+str(auvID)+'/rx_ctrl_policy', numpy_msg(Floats), queue_size=1000)
     
     # Start simulation
     listener(auvID,auvNum)
