@@ -18,7 +18,7 @@ header = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(header)
 
 # Init Global Variables for callbacks
-m_rx = [0,0,0,0]
+setRx = [[0],[0],[0],[0],[0]]
 rcvd_pkt, lost_pkt = 0, 0
 pi_bar = [[], [], [], []]
 
@@ -28,15 +28,16 @@ def sig(x):
     gamma = header.config.gamma
     return 1/(1+np.e**(alpha*(gamma-x)))
 
-def run_acoustic_modem(pub_rx_meas,pub_intent ,auvID,auvNum):
+def run_acoustic_modem(pub_rx_meas,pub_intent ,auvID, auvNum):
 
     """Simulate the sensor platform and the moving target
     Input:  
-            pub_rx_meas : object containing the publisher for received msgs
+            pub_rx_meas : object containing the publishers for received msgs
+            pub_intent : object containing the publishers for policy of intent
             auvID : ID of the AUV associated with acoustic modem node
             auvNum : number ora AUVs
     """
-    global count1, m_rx, auv_xy, pi_bar, rcvd_pkt, lost_pkt
+    global count1, setRx, auv_xy, pi_bar, rcvd_pkt, lost_pkt
 
     # Rospy sim params
     Hz = 1/(header.config.TIME_STEP) #NB: different from sampling rate for move things, this is ros rate   
@@ -45,7 +46,7 @@ def run_acoustic_modem(pub_rx_meas,pub_intent ,auvID,auvNum):
     # Init variables, lists, bool
     t, count1, idx = 0,0,0
     delay, meas_table, idx_rmv = [], [], []
-    old_m = [0,0,0,0]
+    old_m = [0,0,0,0,0]#[t,meas,psx,psy,label]
     update_buff = False
     
     # Load simulation parameters from config file
@@ -55,25 +56,27 @@ def run_acoustic_modem(pub_rx_meas,pub_intent ,auvID,auvNum):
     buffLen = header.config.buffLen
     for i in range(buffLen):
         delay.append(0)
-        meas_table.append(0)
+        meas_table.append(0)#create a buffer of zeros
     
     rospy.sleep(1)
     ## SIMULATION LOOP ############################################################################################################
     while not rospy.is_shutdown():
 
-        # Check if the measurements has alredy been processed.
-        if m_rx[0] - old_m[0] > 1:#check if a new meas has been overwritten
+        measRx = setRx[0]
+        if measRx[0] - old_m[0] > 1:#check if a new set of meas has been overwritten
 
-            m_rx.append(auv_xy[0])
-            m_rx.append(auv_xy[1])
+            for i in range(len(setRx)):
+                setRx[i].append(auv_xy[0])#aggiungevo la pos del auv locale per calcolare SNR 
+                setRx[i].append(auv_xy[1])
             
             # Check where to put the measurement in the buffer
-            idx = meas_table.index(0)
-            meas_table[idx] = m_rx
+            idx = meas_table.index(0)#put the measurement at the index with
+            meas_table[idx] = setRx
                       
         for i in range(len(meas_table[0:idx])):
             
-            measure = meas_table[i]         
+            set = meas_table[i]
+            measure = set[-1]#take te last measure (the one done just before transmitting) of the set as reference for computin SNR
             delay[i] += dt
             d = np.sqrt((measure[5]-measure[3])**2+(measure[4]-measure[2])**2)
             prob = sig(d)
@@ -114,7 +117,7 @@ def run_acoustic_modem(pub_rx_meas,pub_intent ,auvID,auvNum):
             rospy.on_shutdown(shutdown_cllbk)
             rospy.signal_shutdown('Simulation time limit reached')
 
-        old_m = m_rx
+        old_m = measRx
         t += dt
         count1 += 1 
         rate.sleep()
@@ -136,9 +139,10 @@ def callbackAuvState(data):
     auv_xy = [tmp[0],tmp[1]]
 
 def callbackMeasRx(data):
-    global m_rx
-    tmp = data.data
-    m_rx = [tmp[0],tmp[1],tmp[2],tmp[3]]
+    global setRx
+    setRx = data.data#TODO CHANGE DATA STRUCTURES
+    rospy.loginfo('CALLBACK ACOUSTIC MODEM %s',setRx)
+    #setRx = [tmp[0],tmp[1],tmp[2],tmp[3]]
 
 def callback1(data):
     global pi_bar
