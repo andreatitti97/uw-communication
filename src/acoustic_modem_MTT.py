@@ -7,6 +7,7 @@ import numpy as np
 import rospy
 from rospy_tutorials.msg import Floats
 from rospy.numpy_msg import numpy_msg
+from uwmsn_msgs.msg import Matrix
 
 # Load the header file as a Python module 
 pkg_directory = os.path.dirname(os.path.dirname(pathlib.Path(__file__).parent.resolve()))
@@ -18,7 +19,7 @@ header = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(header)
 
 # Init Global Variables for callbacks
-m_rx = [[0],[0],[0],[0],[0]]
+setRx = [[0],[0],[0],[0],[0]]
 rcvd_pkt, lost_pkt = 0, 0
 pi_bar = [[], [], [], []]
 
@@ -37,7 +38,7 @@ def run_acoustic_modem(pub_rx_meas,pub_intent ,auvID, auvNum):
             auvID : ID of the AUV associated with acoustic modem node
             auvNum : number ora AUVs
     """
-    global count1, m_rx, auv_xy, pi_bar, rcvd_pkt, lost_pkt
+    global count1, setRx, auv_xy, pi_bar, rcvd_pkt, lost_pkt
 
     # Rospy sim params
     Hz = 1/(header.config.TIME_STEP) #NB: different from sampling rate for move things, this is ros rate   
@@ -45,8 +46,8 @@ def run_acoustic_modem(pub_rx_meas,pub_intent ,auvID, auvNum):
 
     # Init variables, lists, bool
     t, count1, idx = 0,0,0
-    delay, meas_table, idx_rmv = [], [], []
-    old_m = [0,0,0,0,0]#[t,meas,psx,psy,label]
+    delay, buffer, idx_rmv = [], [], []
+    measRxOld = [0,0,0,0,0]#[t,meas,psx,psy,label]
     update_buff = False
     
     # Load simulation parameters from config file
@@ -56,68 +57,72 @@ def run_acoustic_modem(pub_rx_meas,pub_intent ,auvID, auvNum):
     buffLen = header.config.buffLen
     for i in range(buffLen):
         delay.append(0)
-        meas_table.append(0)#create a buffer of zeros
+        buffer.append([0])#create a buffer 
     
     rospy.sleep(1)
     ## SIMULATION LOOP ############################################################################################################
     while not rospy.is_shutdown():
 
+        measRx = setRx[0]
         
-        # Check if the measurements has alredy been processed.
-        if m_rx[0] - old_m[0] > 1:#check if a new meas has been overwritten
+        if measRx[0] - measRxOld[0] > 1:#check if a new set of meas has been overwritten
 
-            m_rx.append(auv_xy[0])
-            m_rx.append(auv_xy[1])
-            
             # Check where to put the measurement in the buffer
-            idx = meas_table.index(0)
-            meas_table[idx] = m_rx
+            idx = buffer.index([0])#put the measurement at the index with
+            #convert received numpy array to list
+            tmp_setRx = []
+            for i in range(len(setRx)):
+                tmp = setRx[i]
+                tmp_setRx.append([tmp[0],tmp[1],tmp[2],tmp[3],tmp[4]])
+
+            buffer[idx] = tmp_setRx
                       
-        for i in range(len(meas_table[0:idx])):
+        for i in range(len(buffer[0:idx])):
             
-            set = meas_table[i]
-            measure = set[-1]#take te last measure (the one done just before transmitting) of the set as reference for computin SNR
+            setTx = buffer[i]
+            measure = setTx[-1]#take the last measure (the one done just before transmitting) of the set as reference for computin SNR
             delay[i] += dt
-            d = np.sqrt((measure[5]-measure[3])**2+(measure[4]-measure[2])**2)
-            prob = sig(d)
+            
+            if measure != 0:
+                d = np.sqrt((auv_xy[1]-measure[3])**2+(auv_xy[0]-measure[2])**2)
+                prob = sig(d)
 
-            if delay[i] >= d*(1/c)*2 or d < 10:
+                if delay[i] >= d*(1/c)*2 or d < 10:
 
-                idx_rmv.append(i)
-                update_buff = True
-                
-                rcvd_pkt += 1
-                pub_rx_meas.publish(np.array(measure,dtype=np.float32))
-                tmp1 = pi_bar[auvID-1]
-                pub_intent.publish(np.array(tmp1,dtype=np.float32))
-                '''if (np.random.random() <= prob) or d < 10:
-                    #msg received
-                    rcvd_pkt += 1
-                    pub_rx_meas.publish(np.array(measure,dtype=np.float32))
-                    tmp1 = pi_bar[auvID-1]
-                    pub_intent.publish(np.array(tmp1,dtype=np.float32))
-                        
-                else:#msg lost
-                    lost_pkt += 1
-                    rospy.logwarn('|---- ACOUSTIC MODEM '+str(auvID)+': Lost a Packet')
-'''
+                    idx_rmv.append(i)
+                    update_buff = True
+                    
+                    if (np.random.random() <= prob) or d < 10:
+                        #msg received
+                        rcvd_pkt += 1
+
+                        setTx = np.array(setTx,dtype=np.float32)
+                        rows, cols = setTx.shape
+                        pub_rx_meas.publish(Matrix(data=setTx.flatten().tolist(), rows=rows, cols=cols))
+                        tmp1 = pi_bar[auvID-1]
+                        pub_intent.publish(np.array(tmp1,dtype=np.float32))
+                            
+                    else:#msg lost
+                        lost_pkt += 1
+                        rospy.logwarn('|---- ACOUSTIC MODEM '+str(auvID)+': Lost a Packet')
+
         if update_buff == True:
             # Update the buffer according to the pkt sent
             for i in range(len(idx_rmv)-1):
                 if len(idx_rmv) > 0:
-                    meas_table.pop(idx_rmv[i])
+                    buffer.pop(idx_rmv[i])
                     delay.pop(idx_rmv[i])
-                    meas_table.append(0)
+                    buffer.append(0)
                     delay.append(0)
                     idx_rmv = []
-                    idx = meas_table.index(0)
+                    idx = buffer.index(0)
                     update_buff = False
 
         if int(t) == (header.config.TIME_DURATION-1):
             rospy.on_shutdown(shutdown_cllbk)
             rospy.signal_shutdown('Simulation time limit reached')
 
-        old_m = m_rx
+        measRxOld = measRx
         t += dt
         count1 += 1 
         rate.sleep()
@@ -138,10 +143,9 @@ def callbackAuvState(data):
     tmp = data.data
     auv_xy = [tmp[0],tmp[1]]
 
-def callbackMeasRx(data):
-    global m_rx
-    tmp = data.data
-    m_rx = [tmp[0],tmp[1],tmp[2],tmp[3]]
+def callbackMeasTx(data):
+    global setRx
+    setRx = np.array(data.data).reshape(data.rows, data.cols)
 
 def callback1(data):
     global pi_bar
@@ -168,7 +172,7 @@ def listener(auvID,auvNum):
     rospy.Subscriber('vehicle_state_'+str(auvID), numpy_msg(Floats), callbackAuvState)
     callbackCtrlPolicy = [callback1,callback2,callback3,callback4]
     for i in range(auvNum):
-        rospy.Subscriber('/'+str(i+1)+'/tx_meas', numpy_msg(Floats), callbackMeasRx) 
+        rospy.Subscriber('/'+str(i+1)+'/tx_meas', Matrix, callbackMeasTx) 
         rospy.Subscriber('/'+str(i+1)+'/tx_ctrl_policy',numpy_msg(Floats), callbackCtrlPolicy[i]) 
 
 def main():
@@ -186,7 +190,7 @@ def main():
     rospy.init_node('acoustic_modem'+str(auvID)) #log_level=rospy.DEBUG
 
     # Publishers init
-    pub_rx_meas = rospy.Publisher('/'+str(auvID)+'/rx_meas', numpy_msg(Floats), queue_size=100)
+    pub_rx_meas = rospy.Publisher('/'+str(auvID)+'/rx_meas', Matrix, queue_size=100)
     pub_rx_ctrl_policy = rospy.Publisher('/'+str(auvID)+'/rx_ctrl_policy', numpy_msg(Floats), queue_size=1000)
     
     # Start simulation
