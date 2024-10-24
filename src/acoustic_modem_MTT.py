@@ -112,10 +112,10 @@ def run_acoustic_modem(pub_rx_meas,pub_intent ,auvID, auvNum):
                 if len(idx_rmv) > 0:
                     buffer.pop(idx_rmv[i])
                     delay.pop(idx_rmv[i])
-                    buffer.append(0)
+                    buffer.append([0])
                     delay.append(0)
                     idx_rmv = []
-                    idx = buffer.index(0)
+                    idx = buffer.index([0])
                     update_buff = False
 
         if int(t) == (header.config.TIME_DURATION-1):
