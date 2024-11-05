@@ -23,8 +23,8 @@ spec.loader.exec_module(h)
 # VELOCITÀ DI COMUNICATION FISSA = 480 bps!
 # Init Global Variables for callbacks
 rcvd_pkt, lost_pkt = 0, 0
-pi_bar = [[] for _ in range(len(h.config.AUV_XY))]
-setRx = [[0],[0],[0],[0],[0]]
+pi_bar = [[] for _ in range(h.config.auvNum)]
+setRx = [[0] for _ in range(h.config.targetNum)]
 
 def run_acoustic_modem(pub_rx_meas,pub_intent ,auvID, auvNum):
 
@@ -61,68 +61,72 @@ def run_acoustic_modem(pub_rx_meas,pub_intent ,auvID, auvNum):
     ## SIMULATION LOOP ############################################################################################################
     while not rospy.is_shutdown():
 
+        # Retrieve current measurement and check for new data
         measRx = setRx[0]
-        
-        if measRx[0] - measRxOld[0] > 1:#check if a new set of meas has been overwritten
-            
-            # Check where to put the measurement in the buffer
-            idx = buffer.index([0])#put the measurement at the index with
-            #convert received numpy array to list
-            tmp_setRx = []
-            for i in range(len(setRx)):
-                tmp = setRx[i]
-                tmp_setRx.append([tmp[0],tmp[1],tmp[2],tmp[3],tmp[4]])
+        if measRx[0] - measRxOld[0] > 1:
+            # Find the first empty buffer slot and update with new measurements
+            try:
+                idx = buffer.index([0])
+                tmp_setRx = [[tmp[0], tmp[1], tmp[2], tmp[3], tmp[4]] for tmp in setRx]
+                buffer[idx] = tmp_setRx
+            except ValueError:
+                rospy.logwarn("No empty buffer slot available")
 
-            buffer[idx] = tmp_setRx
-
-        for i in range(len(buffer[0:idx])):
-            
+        # Process each measurement in the buffer up to the current index
+        for i in range(idx):
             setTx = buffer[i]
-            measure = setTx[-1]#take the last measure (the one done just before transmitting) of the set as reference for computin SNR
+            measure = setTx[-1]
             delay[i] += dt
-            
+
             if measure != 0:
-                d = np.sqrt((auv_xy[1]-measure[3])**2+(auv_xy[0]-measure[2])**2)
+                # Calculate distance only once for this measure
+                d = np.sqrt((auv_xy[1] - measure[3]) ** 2 + (auv_xy[0] - measure[2]) ** 2)
+                transmission_time = d * (1 / c) * 2  # Calculate once
 
-                if delay[i] >= (d*(1/c)*2) or d < 10:#latencies according to delay
-
+                # Check if delay has met the required transmission time
+                if delay[i] >= transmission_time:
                     idx_rmv.append(i)
-                    update_buff = True                    
+                    update_buff = True
+
+                    # Simulate packet delivery
                     if h.simulatePktDelivery(PDR):
-                        #msg received
                         rcvd_pkt += 1
-                        setTx = np.array(setTx,dtype=np.float32)
-                        rows, cols = setTx.shape
-                        # First Traffic - consensus (distributed estimation is better)
-                        pub_rx_meas.publish(Matrix(data=setTx.flatten().tolist(), rows=rows, cols=cols))
-                        tmp1 = pi_bar[auvID-1]
-                        # Second Traffic - Cooperation and Navigation (policy of intent)
-                        pub_intent.publish(np.array(tmp1,dtype=np.float32))
-                            
-                    else:#msg lost
+                        setTx_np = np.array(setTx, dtype=np.float32)
+                        rows, cols = setTx_np.shape
+
+                        # Publish data
+                        pub_rx_meas.publish(Matrix(data=setTx_np.flatten().tolist(), rows=rows, cols=cols))
+                        pi_i = pi_bar[auvID - 1]
+                        pub_intent.publish(np.array(pi_i, dtype=np.float32))
+                    else:
                         lost_pkt += 1
-                        rospy.logwarn('|---- ACOUSTIC MODEM '+str(auvID)+': Lost a Packet')
+                        rospy.logwarn(f'|---- ACOUSTIC MODEM {auvID}: Lost a Packet')
 
-        if update_buff == True:
-            # Update the buffer according to the pkt sent
-            for i in range(len(idx_rmv)-1):
-                if len(idx_rmv) > 0:
-                    buffer.pop(idx_rmv[i])
-                    delay.pop(idx_rmv[i])
-                    buffer.append([0])
-                    delay.append(0)
-                    idx_rmv = []
-                    idx = buffer.index([0])
-                    update_buff = False
+        # Update the buffer if needed
+        if update_buff:
+            # Remove indexed elements in one go and append placeholders
+            for i in sorted(idx_rmv, reverse=True):
+                buffer.pop(i)
+                delay.pop(i)
+            buffer.extend([[0]] * len(idx_rmv))
+            delay.extend([0] * len(idx_rmv))
 
-        if int(t) == (h.config.TIME_DURATION-1):
+            # Reset flags and indices
+            idx_rmv.clear()
+            update_buff = False
+            idx = buffer.index([0])
+
+        # End simulation if time limit is reached
+        if int(t) == (h.config.TIME_DURATION - 1):
             rospy.on_shutdown(shutdown_cllbk)
             rospy.signal_shutdown('Simulation time limit reached')
 
+        # Update old measurement, time, and counter, then sleep
         measRxOld = measRx
         t += dt
-        count1 += 1 
+        count1 += 1
         rate.sleep()
+
 
 def shutdown_cllbk():
     global auvID, lost_pkt, rcvd_pkt
@@ -161,16 +165,10 @@ def listener(auvID,auvNum,netTopology):
     - netTopology (list): List of vectors defining network topology.
     """
     # Subscribe to each neighbor's topic
-    print('AUV ID',auvID)
-    print('network topologuy',netTopology)
     for i in range(auvNum):
         if auvID != i+1:
             if i+1 in netTopology:
-                print('AUV ID',auvID)
-                print('Number of Neighbours:',len(netTopology))
-                
-                rospy.Subscriber('/'+str(i+1)+'/tx_meas', Matrix, callbackMeasTx) 
-        
+                rospy.Subscriber('/'+str(i+1)+'/tx_meas', Matrix, callbackMeasTx)      
         rospy.Subscriber('/'+str(i+1)+'/tx_ctrl_policy', numpy_msg(Floats), create_callback(i))
     rospy.Subscriber('vehicle_state_'+str(auvID), numpy_msg(Floats), callbackAuvState)
 
