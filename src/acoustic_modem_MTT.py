@@ -57,6 +57,14 @@ def run_acoustic_modem(pub_rx_meas,pub_intent ,auvID, auvNum):
         delay.append(0)
         buffer.append([0])#create a buffer 
     
+    '''NB Ricorda che più è grande il pacchetto più tempo impieghi a trasmettere un messaggio.
+    Ciò significa che quando decidi il Time Slot (Ts), devi essere sicuro che la dimensione del pacchetto
+    sia proporzionata al tempo di trasmissione. Qualora vuoi l'AUV2 come ponte, verifica
+    se riesci ad aggregare le policy of intent. Comunque il focus sarà sul fatto che
+     l'algoritmo funziona con l'aggregazione minima possibile. Adesso in teoria sei nel setup più sfigato
+    perchè 1 e 3 non sanno niente delle loro info recripoche, solo pos iniziale, neanche le misure. '''
+
+
     rospy.sleep(1)
     ## SIMULATION LOOP ############################################################################################################
     while not rospy.is_shutdown():
