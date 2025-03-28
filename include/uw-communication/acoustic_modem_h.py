@@ -20,7 +20,7 @@ tracker = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(tracker)
 
 
-def simulatePktDelivery(pdr, stddev=1):
+def simulatePktDelivery(pdr, stddev=0.0001):
     """
     Simulates packet transmission between two nodes based on packet delivery ratio.
     
