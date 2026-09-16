@@ -1,4 +1,10 @@
 #!/usr/bin/env python
+"""Acoustic modem simulation for the multi-target UWMSN use case.
+
+The node emulates packet delivery, delays, and intermittent communication
+between AUVs using the project-specific acoustic model and ROS message flow.
+"""
+
 #Import basic system modules
 import os, importlib.util, pathlib
 # Import numpy modules

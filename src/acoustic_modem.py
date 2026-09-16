@@ -1,4 +1,11 @@
 #!/usr/bin/env python
+"""Acoustic modem simulation for the single-target UWMSN scenario.
+
+This node emulates underwater acoustic communication between AUVs, including
+packet delivery, propagation delay, and message forwarding under intermittent
+network connectivity.
+"""
+
 #Import basic system modules
 import os, importlib.util, pathlib
 # Import numpy modules
